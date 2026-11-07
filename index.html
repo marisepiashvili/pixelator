@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Art Studio & Sprite Splitter</title>
+  <!-- JSZip ბიბლიოთეკა ZIP ექსპორტისთვის -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #12131a;
+      --panel-bg: #1a1b26;
+      --panel-border: #2c2e3f;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ზედა სათაური */
+    header {
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { font-size: 1.1rem; color: #a5b4fc; display: flex; align-items: center; gap: 8px; }
+    
+    /* ძირითადი სამუშაო არეალი */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* მარცხენა პანელი (პარამეტრები) */
+    .sidebar {
+      width: 330px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--panel-border);
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .section-title {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--panel-border);
+      padding-bottom: 4px;
+    }
+
+    /* Drag & Drop ყუთი */
+    .dropzone {
+      border: 2px dashed #4338ca;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(99, 102, 241, 0.05);
+      transition: all 0.2s ease;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: #818cf8;
+    }
+    .dropzone p { font-size: 0.85rem; color: var(--text-muted); }
+    .dropzone span { font-weight: bold; color: #a5b4fc; }
+
+    /* მართვის ელემენტები */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .control-group label {
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    select, input[type="color"] {
+      width: 100%;
+      background: #24273a;
+      border: 1px solid var(--panel-border);
+      color: #fff;
+      padding: 7px;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    /* ცენტრალური Viewport */
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #090a0f;
+      background-image: 
+        linear-gradient(45deg, #161722 25%, transparent 25%), 
+        linear-gradient(-45deg, #161722 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #161722 75%), 
+        linear-gradient(-45deg, transparent 75%, #161722 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+      position: relative;
+      overflow: auto;
+      padding: 20px;
+    }
+
+    canvas {
+      image-rendering: pixelated;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      max-width: 90%;
+      max-height: 80vh;
+      border-radius: 4px;
+    }
+
+    /* ქვედა ბიბლიოთეკა (ამოჭრილი კომპონენტები) */
+    .bottom-library {
+      height: 200px;
+      background: var(--panel-bg);
+      border-top: 1px solid var(--panel-border);
+      display: flex;
+      flex-direction: column;
+    }
+    .library-header {
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #141520;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    .sprites-grid {
+      display: flex;
+      gap: 14px;
+      padding: 12px 16px;
+      overflow-x: auto;
+      align-items: center;
+      flex: 1;
+    }
+    .sprite-card {
+      background: #212333;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .sprite-card canvas {
+      background: #12131a;
+      background-image: linear-gradient(45deg, #1d1e2c 25%, transparent 25%), linear-gradient(-45deg, #1d1e2c 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1d1e2c 75%), linear-gradient(-45deg, transparent 75%, #1d1e2c 75%);
+      background-size: 8px 8px;
+      border: 1px solid #33364d;
+      max-width: 80px;
+      max-height: 80px;
+    }
+
+    /* ღილაკები */
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 7px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn-secondary { background: #374151; }
+    .btn-secondary:hover { background: #4b5563; }
+    .btn-small { padding: 4px 8px; font-size: 0.7rem; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🕹️ Pixel Art & Sprite Separator</h1>
+    <div>
+      <span id="img-dim" style="font-size: 0.8rem; color: var(--text-muted); margin-right: 15px;">ზომა: -</span>
+      <button id="download-full" class="btn btn-secondary">Download Pixel Art</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- პარამეტრების პანელი -->
+    <div class="sidebar">
+      
+      <!-- 1. ფოტოს ატვირთვა -->
+      <div class="section-title">1. ფოტოს ატვირთვა</div>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="file-input" accept="image/png, image/jpeg, image/jpg" style="display: none;">
+        <p>ჩააგდეთ ფოტო აქ ან <span>აირჩიეთ</span></p>
+        <p style="font-size: 0.7rem; margin-top: 5px;">JPG, JPEG, PNG</p>
+      </div>
+
+      <!-- 2. Pixel Art პარამეტრები -->
+      <div class="section-title">2. Pixel Art კონვერტაცია</div>
+      
+      <div class="control-group">
+        <label>Pixel Size (ზომა): <span id="val-pixel">6</span>px</label>
+        <input type="range" id="param-pixelsize" min="2" max="24" value="6">
+      </div>
+
+      <div class="control-group">
+        <label>პალიტრა (Palette):</label>
+        <select id="param-palette">
+          <option value="none">ყველა ფერი (Full Color)</option>
+          <option value="gameboy">Classic GameBoy (4 Greenish)</option>
+          <option value="pico8">PICO-8 (16 Retro)</option>
+          <option value="nes">NES (Nintendo 16)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>კონტრასტი: <span id="val-contrast">100</span>%</label>
+        <input type="range" id="param-contrast" min="50" max="200" value="100">
+      </div>
+
+      <div class="control-group">
+        <label>სიკაშკაშე: <span id="val-brightness">100</span>%</label>
+        <input type="range" id="param-brightness" min="50" max="180" value="100">
+      </div>
+
+      <!-- 3. ფონის მოშორება და სეგმენტაცია -->
+      <div class="section-title">3. კომპონენტების გამოყოფა</div>
+
+      <div class="control-group">
+        <label>ფონის ფერი (წასაშლელი):</label>
+        <input type="color" id="param-bgcolor" value="#ffffff">
+      </div>
+
+      <div class="control-group">
+        <label>ფონის მგრძნობელობა (Threshold): <span id="val-threshold">45</span></label>
+        <input type="range" id="param-threshold" min="5" max="150" value="45">
+      </div>
+
+      <button id="btn-extract" class="btn" style="margin-top: 10px;">✂️ ობიექტების ამოცნობა და გამოყოფა</button>
+    </div>
+
+    <!-- ცენტრალური ეკრანი -->
+    <div class="canvas-container">
+      <canvas id="main-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- ქვედა პანელი (ბიბლიოთეკა) -->
+  <div class="bottom-library">
+    <div class="library-header">
+      <span style="font-size: 0.85rem; font-weight: bold;">📦 გამოყოფილი ასეტები (<span id="sprite-count">0</span>)</span>
+      <button id="btn-download-all-zip" class="btn btn-small" disabled>📦 Download All (ZIP)</button>
+    </div>
+    <div class="sprites-grid" id="sprites-grid">
+      <p style="color: var(--text-muted); font-size: 0.8rem; margin: auto;">ატვირთეთ ფოტო და დააჭირეთ „ობიექტების გამოყოფას“</p>
+    </div>
+  </div>
+
+  <script>
+    // --- რეტრო პალიტრების მონაცემები (RGB) ---
+    const PALETTES = {
+      gameboy: [[15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]],
+      pico8: [
+        [0,0,0], [29,43,83], [126,37,83], [0,135,81], [171,82,54], [95,87,79], [194,195,199], [255,241,232],
+        [255,0,77], [255,163,0], [255,236,39], [0,228,54], [41,173,255], [131,118,156], [255,119,168], [255,204,170]
+      ],
+      nes: [
+        [124,124,124], [0,0,252], [0,0,188], [68,40,188], [148,0,132], [168,0,32], [168,16,0], [136,20,0],
+        [80,48,0], [0,120,0], [0,104,0], [0,88,0], [0,64,88], [0,0,0], [252,252,252], [248,56,0]
+      ]
+    };
+
+    let originalImg = null;
+    let extractedComponents = [];
+
+    // DOM ელემენტები
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const mainCanvas = document.getElementById('main-canvas');
+    const ctx = mainCanvas.getContext('2d', { willReadFrequently: true });
+    const spritesGrid = document.getElementById('sprites-grid');
+    const spriteCountEl = document.getElementById('sprite-count');
+    const btnZip = document.getElementById('btn-download-all-zip');
+
+    // პარამეტრები
+    const pixelSizeInput = document.getElementById('param-pixelsize');
+    const paletteInput = document.getElementById('param-palette');
+    const contrastInput = document.getElementById('param-contrast');
+    const brightnessInput = document.getElementById('param-brightness');
+    const bgColorInput = document.getElementById('param-bgcolor');
+    const thresholdInput = document.getElementById('param-threshold');
+
+    // UI მნიშვნელობების ჩვენება
+    pixelSizeInput.oninput = (e) => { document.getElementById('val-pixel').innerText = e.target.value; renderPixelArt(); };
+    contrastInput.oninput = (e) => { document.getElementById('val-contrast').innerText = e.target.value; renderPixelArt(); };
+    brightnessInput.oninput = (e) => { document.getElementById('val-brightness').innerText = e.target.value; renderPixelArt(); };
+    thresholdInput.oninput = (e) => { document.getElementById('val-threshold').innerText = e.target.value; };
+    paletteInput.onchange = () => renderPixelArt();
+
+    // 1. ფოტოს ატვირთვა და Drag & Drop
+    dropzone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+    dropzone.ondragover = (e) => { e.preventDefault(); dropzone.classList.add('dragover'); };
+    dropzone.ondragleave = () => dropzone.classList.remove('dragover');
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    };
+
+    function handleFile(file) {
+      if (!file || !file.type.match('image.*')) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          originalImg = img;
+          document.getElementById('img-dim').innerText = `ზომა: ${img.width} x ${img.height}px`;
+          
+          // ავტომატურად ვიღებთ ფონის ფერს პირველი პიქსელიდან (მარცხენა ზედა კუთხე)
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = 1; tempCanvas.height = 1;
+          const tctx = tempCanvas.getContext('2d');
+          tctx.drawImage(img, 0, 0, 1, 1);
+          const [r, g, b] = tctx.getImageData(0, 0, 1, 1).data;
+          bgColorInput.value = rgbToHex(r, g, b);
+
+          renderPixelArt();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 2. Pixel Art ალგორითმი და ფერების მართვა
+    function renderPixelArt() {
+      if (!originalImg) return;
+
+      const pSize = parseInt(pixelSizeInput.value, 10);
+      const w = originalImg.width;
+      const h = originalImg.height;
+
+      mainCanvas.width = w;
+      mainCanvas.height = h;
+
+      // დაბალ გაფართოებაზე დაყვანა (Downsampling)
+      const scaledW = Math.max(1, Math.floor(w / pSize));
+      const scaledH = Math.max(1, Math.floor(h / pSize));
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = scaledW;
+      offCanvas.height = scaledH;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+      // ფილტრები: სიკაშკაშე და კონტრასტი
+      offCtx.filter = `brightness(${brightnessInput.value}%) contrast(${contrastInput.value}%)`;
+      offCtx.drawImage(originalImg, 0, 0, scaledW, scaledH);
+
+      const imgData = offCtx.getImageData(0, 0, scaledW, scaledH);
+      const data = imgData.data;
+      const selectedPalette = paletteInput.value;
+
+      // ფერების პალიტრაზე მიბმა (Color Quantization)
+      if (selectedPalette !== 'none') {
+        const pal = PALETTES[selectedPalette];
+        for (let i = 0; i < data.length; i += 4) {
+          const nearest = findNearestColor(data[i], data[i+1], data[i+2], pal);
+          data[i] = nearest[0];
+          data[i+1] = nearest[1];
+          data[i+2] = nearest[2];
+        }
+      }
+
+      offCtx.putImageData(imgData, 0, 0);
+
+      // უკან გაზრდა მკვეთრი პიქსელებით (Nearest Neighbor)
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(offCanvas, 0, 0, scaledW, scaledH, 0, 0, w, h);
+    }
+
+    // ევკლიდეს მანძილი ფერების შესადარებლად
+    function findNearestColor(r, g, b, palette) {
+      let minDist = Infinity;
+      let closest = palette[0];
+      for (let c of palette) {
+        let dist = (r - c[0])**2 + (g - c[1])**2 + (b - c[2])**2;
+        if (dist < minDist) {
+          minDist = dist;
+          closest = c;
+        }
+      }
+      return closest;
+    }
+
+    // 3. კომპონენტების გამოყოფა (Connected-Component Labeling / BFS)
+    document.getElementById('btn-extract').onclick = extractSprites;
+
+    function extractSprites() {
+      if (!originalImg) return;
+
+      const w = mainCanvas.width;
+      const h = mainCanvas.height;
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const data = imgData.data;
+
+      const targetBg = hexToRgb(bgColorInput.value);
+      const threshold = parseInt(thresholdInput.value, 10);
+
+      // ბინარული რუკის შექმნა (1 = ობიექტი, 0 = ფონი)
+      const mask = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+          
+          const colorDist = Math.sqrt((r - targetBg.r)**2 + (g - targetBg.g)**2 + (b - targetBg.b)**2);
+          if (a > 30 && colorDist > threshold) {
+            mask[y * w + x] = 1;
+          }
+        }
+      }
+
+      // BFS კლასტერიზაცია (ცალკეული ობიექტების პოვნა)
+      const visited = new Uint8Array(w * h);
+      const components = [];
+      const minClusterSize = 40; // უმნიშვნელო წერტილების/ხმაურის გაფილტვრა
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const index = y * w + x;
+          if (mask[index] === 1 && !visited[index]) {
+            // ახალი ობიექტი მოიძებნა
+            const queue = [index];
+            visited[index] = 1;
+
+            let minX = x, maxX = x, minY = y, maxY = y;
+            const pixels = [];
+
+            while (queue.length > 0) {
+              const curr = queue.pop();
+              pixels.push(curr);
+              const cx = curr % w;
+              const cy = Math.floor(curr / w);
+
+              if (cx < minX) minX = cx;
+              if (cx > maxX) maxX = cx;
+              if (cy < minY) minY = cy;
+              if (cy > maxY) maxY = cy;
+
+              // 4-მეზობლის შემოწმება (მარჯვნივ, მარცხნივ, ზემოთ, ქვემოთ)
+              const neighbors = [
+                { nx: cx + 1, ny: cy }, { nx: cx - 1, ny: cy },
+                { nx: cx, ny: cy + 1 }, { nx: cx, ny: cy - 1 }
+              ];
+
+              for (let n of neighbors) {
+                if (n.nx >= 0 && n.nx < w && n.ny >= 0 && n.ny < h) {
+                  const nIdx = n.ny * w + n.nx;
+                  if (mask[nIdx] === 1 && !visited[nIdx]) {
+                    visited[nIdx] = 1;
+                    queue.push(nIdx);
+                  }
+                }
+              }
+            }
+
+            if (pixels.length >= minClusterSize) {
+              components.push({ minX, maxX, minY, maxY, pixels });
+            }
+          }
+        }
+      }
+
+      displayExtractedComponents(components, imgData, w);
+    }
+
+    function displayExtractedComponents(components, sourceImgData, fullWidth) {
+      spritesGrid.innerHTML = '';
+      extractedComponents = [];
+      spriteCountEl.innerText = components.length;
+
+      if (components.length === 0) {
+        spritesGrid.innerHTML = `<p style="color: #ef4444; font-size: 0.85rem; margin: auto;">ვერცერთი ობიექტი ვერ გამოიყო. შეამცირეთ ფონის მგრძნობელობა (Threshold) ან შეამოწმეთ ფონის ფერი.</p>`;
+        btnZip.disabled = true;
+        return;
+      }
+
+      btnZip.disabled = false;
+
+      components.forEach((comp, i) => {
+        const compW = comp.maxX - comp.minX + 1;
+        const compH = comp.maxY - comp.minY + 1;
+
+        // გამჭვირვალე ქვე-კანვასის მომზადება
+        const subCanvas = document.createElement('canvas');
+        subCanvas.width = compW;
+        subCanvas.height = compH;
+        const subCtx = subCanvas.getContext('2d');
+        const outData = subCtx.createImageData(compW, compH);
+
+        const pixelSet = new Set(comp.pixels);
+
+        for (let y = 0; y < compH; y++) {
+          for (let x = 0; x < compW; x++) {
+            const originalGlobalIdx = (comp.minY + y) * fullWidth + (comp.minX + x);
+            const targetIdx = (y * compW + x) * 4;
+
+            if (pixelSet.has(originalGlobalIdx)) {
+              const srcIdx = originalGlobalIdx * 4;
+              outData.data[targetIdx] = sourceImgData.data[srcIdx];
+              outData.data[targetIdx + 1] = sourceImgData.data[srcIdx + 1];
+              outData.data[targetIdx + 2] = sourceImgData.data[srcIdx + 2];
+              outData.data[targetIdx + 3] = sourceImgData.data[srcIdx + 3];
+            } else {
+              outData.data[targetIdx + 3] = 0; // გამჭვირვალე
+            }
+          }
+        }
+        subCtx.putImageData(outData, 0, 0);
+
+        extractedComponents.push(subCanvas);
+
+        // ბარათის აწყობა UI-სთვის
+        const card = document.createElement('div');
+        card.className = 'sprite-card';
+        card.innerHTML = `
+          <span style="font-size: 0.7rem; color: #9ca3af;">#${i + 1} (${compW}x${compH})</span>
+        `;
+        card.prepend(subCanvas);
+
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'btn btn-small';
+        dlBtn.innerText = 'PNG';
+        dlBtn.onclick = () => downloadCanvas(subCanvas, `sprite_${i + 1}.png`);
+        card.appendChild(dlBtn);
+
+        spritesGrid.appendChild(card);
+      });
+    }
+
+    // 4. ექსპორტის ფუნქციები (PNG & ZIP)
+    function downloadCanvas(canvas, filename) {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    document.getElementById('download-full').onclick = () => {
+      if (mainCanvas.width > 0) downloadCanvas(mainCanvas, 'pixel_art_full.png');
+    };
+
+    document.getElementById('btn-download-all-zip').onclick = async () => {
+      if (extractedComponents.length === 0) return;
+      const zip = new JSZip();
+
+      extractedComponents.forEach((canvas, index) => {
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+        zip.file(`sprite_${index + 1}.png`, base64Data, { base64: true });
+      });
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = "pixel_sprites_pack.zip";
+      link.click();
+    };
+
+    // დამხმარე კონვერტორები
+    function hexToRgb(hex) {
+      let bigint = parseInt(hex.slice(1), 16);
+      return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+    }
+
+    function rgbToHex(r, g, b) {
+      return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+  </script>
+</body>
+</html>
